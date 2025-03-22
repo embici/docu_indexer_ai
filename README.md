@@ -24,9 +24,34 @@ pip install -r requirements.txt
 OPENAI_API_KEY=your_api_key_here
 ```
 
+## Configuration
+
+The project uses `src/config.yaml` for configuration. You can customize:
+
+### OpenAI Settings
+- `model_name`: The OpenAI model to use (default: "gpt-4")
+- `temperature`: Temperature for answer generation (default: 0)
+
+### Document Processing
+- `chunk_size`: Size of text chunks for indexing (default: 1000)
+- `chunk_overlap`: Overlap between chunks (default: 100)
+
+### Vector Store
+- `index_path`: Path to store the FAISS index (default: "faiss_index")
+- `similarity_search_k`: Number of similar documents to retrieve (default: 4)
+
+### URL Configuration
+- Add URLs to index in the `urls` section
+- Configure URL pattern restrictions:
+  - `accepted`: Patterns for URLs to include
+  - `blacklisted`: Patterns for URLs to exclude
+
+### Prompt Template
+Customize the prompt template used for generating answers.
+
 ## Usage
 
-1. Modify the URLs in `src/doc_indexer.py` to include your documentation pages.
+1. Configure your documentation URLs and settings in `src/config.yaml`
 
 2. Run the indexing and question-answering system:
 ```bash
@@ -38,13 +63,6 @@ The script will:
 - Save the FAISS index locally
 - Run an example question to demonstrate the system
 
-## Customization
-
-You can customize the following parameters in `src/doc_indexer.py`:
-- `chunk_size`: Size of text chunks for indexing (default: 1000)
-- `chunk_overlap`: Overlap between chunks (default: 100)
-- `temperature`: GPT-4 temperature for answer generation (default: 0)
-
 ## Features
 
 - Efficient document indexing using FAISS
@@ -52,10 +70,55 @@ You can customize the following parameters in `src/doc_indexer.py`:
 - GPT-4 powered answer generation
 - Persistent storage of the vector index
 - Customizable prompt templates
+- URL pattern-based filtering
 - Easy-to-use API for question answering
+- Recursive document crawling
+- Automatic link extraction and filtering
 
 ## Requirements
 
 - Python 3.8+
 - OpenAI API key
-- Internet connection for web scraping 
+- Internet connection for web scraping
+- Required packages:
+  - langchain>=0.1.0
+  - langchain-community>=0.0.1
+  - langchain-openai>=0.0.1
+  - faiss-cpu>=1.7.4
+  - openai>=1.0.0
+  - python-dotenv>=1.0.0
+  - beautifulsoup4>=4.12.0
+  - requests>=2.31.0
+  - pyyaml>=6.0.1
+  - tiktoken>=0.9.0
+  - urllib3>=2.0.0
+  - typing-extensions>=4.8.0
+  - pydantic>=2.5.0
+
+## Project Structure
+
+```
+.
+├── src/
+│   ├── doc_indexer.py    # Main indexing and QA implementation
+│   └── config.yaml       # Configuration file
+├── requirements.txt      # Project dependencies
+├── .env                 # Environment variables (create this)
+└── README.md           # This file
+```
+
+## Example Usage
+
+```python
+from src.doc_indexer import DocumentationIndexer
+
+# Initialize the indexer
+indexer = DocumentationIndexer()
+
+# Index documents from configured URLs
+indexer.index_documents()
+
+# Ask questions about the documentation
+answer = indexer.ask_question("What is Adobe Analytics?")
+print(answer)
+``` 
