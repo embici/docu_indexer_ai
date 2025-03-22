@@ -1,124 +1,154 @@
-# Documentation Indexer with LangChain and FAISS
+# Adobe Analytics Documentation Indexer
 
-This project implements a documentation indexing and retrieval system using LangChain and FAISS. It allows you to:
-1. Index documentation from web pages
-2. Store the embeddings in a FAISS vector store
-3. Retrieve relevant information based on user questions
-4. Generate answers using GPT-4
+An AI-powered documentation search and query system for Adobe Analytics documentation. This project uses LangChain, OpenAI, and FAISS to create a vector database of Adobe Analytics documentation and provides a FastAPI interface for querying the documentation.
 
-## Setup
+## Features
 
-1. Create a virtual environment and activate it:
+- Automated documentation crawling and indexing
+- Vector-based semantic search using FAISS
+- OpenAI-powered question answering
+- RESTful API interface
+- Source URL tracking for answers
+- Configurable URL patterns and content extraction
+
+## Prerequisites
+
+- Python 3.8 or higher
+- OpenAI API key
+- Virtual environment (recommended)
+
+## Installation
+
+1. Clone the repository:
 ```bash
-python -m venv venv
+git clone <repository-url>
+cd docu_indexer_ai
+```
+
+2. Create and activate a virtual environment:
+```bash
+python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-2. Install the required packages:
+3. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Create a `.env` file in the project root with your OpenAI API key:
+4. Create a `.env` file in the project root with your OpenAI API key:
 ```
 OPENAI_API_KEY=your_api_key_here
 ```
 
 ## Configuration
 
-The project uses `src/config.yaml` for configuration. You can customize:
+The project uses a YAML configuration file (`src/config.yaml`) for various settings:
 
-### OpenAI Settings
-- `model_name`: The OpenAI model to use (default: "gpt-4")
-- `temperature`: Temperature for answer generation (default: 0)
-
-### Document Processing
-- `chunk_size`: Size of text chunks for indexing (default: 1000)
-- `chunk_overlap`: Overlap between chunks (default: 100)
-
-### Vector Store
-- `index_path`: Path to store the FAISS index (default: "faiss_index")
-- `similarity_search_k`: Number of similar documents to retrieve (default: 4)
-
-### URL Configuration
-- Add URLs to index in the `urls` section
-- Configure URL pattern restrictions:
-  - `accepted`: Patterns for URLs to include
-  - `blacklisted`: Patterns for URLs to exclude
-
-### Prompt Template
-Customize the prompt template used for generating answers.
+- URLs to index
+- URL patterns for crawling
+- Document chunking settings
+- Vector store settings
+- OpenAI model settings
 
 ## Usage
 
-1. Configure your documentation URLs and settings in `src/config.yaml`
+### Running the API Server
 
-2. Run the indexing and question-answering system:
+1. Start the API server:
 ```bash
-python src/doc_indexer.py
+python3 src/api.py
 ```
 
-The script will:
-- Load and index the documentation from the specified URLs
-- Save the FAISS index locally
-- Run an example question to demonstrate the system
+The server will start on http://localhost:8001
 
-## Features
+### API Endpoints
 
-- Efficient document indexing using FAISS
-- Semantic search capabilities
-- GPT-4 powered answer generation
-- Persistent storage of the vector index
-- Customizable prompt templates
-- URL pattern-based filtering
-- Easy-to-use API for question answering
-- Recursive document crawling
-- Automatic link extraction and filtering
+#### GET /
+Health check endpoint that returns API status and available endpoints.
 
-## Requirements
+#### POST /ask
+Query the documentation with a question.
 
-- Python 3.8+
-- OpenAI API key
-- Internet connection for web scraping
-- Required packages:
-  - langchain>=0.1.0
-  - langchain-community>=0.0.1
-  - langchain-openai>=0.0.1
-  - faiss-cpu>=1.7.4
-  - openai>=1.0.0
-  - python-dotenv>=1.0.0
-  - beautifulsoup4>=4.12.0
-  - requests>=2.31.0
-  - pyyaml>=6.0.1
-  - tiktoken>=0.9.0
-  - urllib3>=2.0.0
-  - typing-extensions>=4.8.0
-  - pydantic>=2.5.0
+Request body:
+```json
+{
+    "question": "What are the main features of Adobe Analytics Activity Map?"
+}
+```
+
+Response:
+```json
+{
+    "answer": "The answer to your question...",
+    "sources": [
+        "https://experienceleague.adobe.com/docs/analytics/analyze/activity-map/activity-map",
+        "https://experienceleague.adobe.com/docs/analytics/components/dimensions/activity-map-link"
+    ]
+}
+```
+
+### Interactive Documentation
+
+Access the Swagger UI documentation at:
+- http://localhost:8001/docs
+
+### Example Usage with curl
+
+```bash
+curl -X POST "http://localhost:8001/ask" \
+     -H "Content-Type: application/json" \
+     -d '{"question": "What are the main features of Adobe Analytics Activity Map?"}'
+```
+
+### n8n Integration
+
+To use this API in n8n:
+
+1. Add an HTTP Request node
+2. Configure the following:
+   - Method: POST
+   - URL: http://localhost:8001/ask
+   - Headers: Content-Type: application/json
+   - Body: JSON with your question
 
 ## Project Structure
 
 ```
-.
+docu_indexer_ai/
 ├── src/
-│   ├── doc_indexer.py    # Main indexing and QA implementation
-│   └── config.yaml       # Configuration file
-├── requirements.txt      # Project dependencies
-├── .env                 # Environment variables (create this)
-└── README.md           # This file
+│   ├── api.py              # FastAPI application
+│   ├── doc_indexer.py      # Main documentation indexing logic
+│   └── config.yaml         # Configuration file
+├── faiss_index/           # Vector store directory
+├── .env                   # Environment variables
+├── requirements.txt       # Python dependencies
+└── README.md             # This file
 ```
 
-## Example Usage
+## Dependencies
 
-```python
-from src.doc_indexer import DocumentationIndexer
+- langchain: Core framework for building applications with LLMs
+- langchain-community: Community-maintained LangChain components
+- langchain-openai: OpenAI integration for LangChain
+- faiss-cpu: Vector similarity search library
+- openai: OpenAI API client
+- python-dotenv: Environment variable management
+- beautifulsoup4: HTML parsing
+- requests: HTTP client
+- pyyaml: YAML configuration handling
+- tiktoken: Token counting for OpenAI models
+- fastapi: Web framework for building APIs
+- uvicorn: ASGI server implementation
 
-# Initialize the indexer
-indexer = DocumentationIndexer()
+## Contributing
 
-# Index documents from configured URLs
-indexer.index_documents()
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
-# Ask questions about the documentation
-answer = indexer.ask_question("What is Adobe Analytics?")
-print(answer)
-``` 
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details. 

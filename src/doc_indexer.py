@@ -262,28 +262,41 @@ class DocumentationIndexer:
             chain_type_kwargs={"prompt": PROMPT}
         )
 
-    def ask_question(self, question: str) -> str:
+    def ask_question(self, question: str) -> dict:
         """
         Ask a question and get an answer based on the indexed documentation
+        Returns a dictionary containing the answer and source URLs
         """
         if not self.qa_chain:
             self.setup_qa_chain()
         
-        return self.qa_chain.invoke({"query": question})["result"]
+        # Get the answer and source documents
+        result = self.qa_chain.invoke({"query": question})
+        answer = result["result"]
+        
+        # Get source documents from the retriever
+        docs = self.vectorstore.similarity_search(question, k=3)
+        source_urls = [doc.metadata.get("source", "Unknown source") for doc in docs]
+        
+        return {
+            "answer": answer,
+            "sources": source_urls
+        }
 
 def main():
+    import sys
+    
     # Example usage
     indexer = DocumentationIndexer()
     
-    # Force rebuilding the index
-    print("Building new index...")
-    indexer.index_documents()
+    # Load existing index
+    indexer.load_index()
     
     # Set up QA chain
     indexer.setup_qa_chain()
     
-    # Test with a question
-    question = "What is Adobe Analytics?"
+    # Get question from command line argument
+    question = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "What is Adobe Analytics?"
     print(f"\nQuestion: {question}")
     answer = indexer.ask_question(question)
     print(f"Answer: {answer}")
