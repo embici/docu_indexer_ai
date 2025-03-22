@@ -1,8 +1,15 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
-from doc_indexer import DocumentationIndexer
+from typing import List
 import uvicorn
+import traceback
+from doc_indexer import DocumentationIndexer
+import sys
+from pathlib import Path
+
+# Add the src directory to the Python path to allow imports
+sys.path.append(str(Path(__file__).parent))
 
 app = FastAPI(
     title="Adobe Analytics Documentation API",
@@ -10,51 +17,119 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",  # Default Vite port
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:5175",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Initialize the documentation indexer
-try:
-    indexer = DocumentationIndexer()
-    indexer.load_index()
-    indexer.setup_qa_chain()
-except Exception as e:
-    print(f"Error initializing indexer: {e}")
-    indexer = None
+indexer = None
+
+def initialize_indexer():
+    """Initialize the indexer and load the index"""
+    global indexer
+    if indexer is None:
+        indexer = DocumentationIndexer()
+        try:
+            indexer.load_index()  # Try to load existing index
+            indexer.setup_qa_chain()  # Set up the QA chain
+            print("✅ Successfully loaded documentation index")
+        except FileNotFoundError:
+            print("❌ No existing index found. Please run 'python doc_indexer.py' first.")
+            indexer = None  # Reset the indexer
+            raise HTTPException(
+                status_code=503,
+                detail="Documentation index not found. Please create the index first."
+            )
+        except Exception as e:
+            print(f"❌ Error initializing documentation indexer: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
+            indexer = None  # Reset the indexer
+            raise HTTPException(
+                status_code=503,
+                detail="Error initializing documentation indexer."
+            )
+    return indexer
 
 class QuestionRequest(BaseModel):
     question: str
 
 class QuestionResponse(BaseModel):
     answer: str
-    sources: list[str]
+    sources: List[str]
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize the indexer when the API starts"""
+    try:
+        initialize_indexer()
+    except Exception as e:
+        print(f"❌ Error during startup: {e}")
+        # Don't raise an exception here, let the API start anyway
+        # The error will be handled when endpoints are called
 
 @app.get("/")
 async def root():
+    """Root endpoint with API information"""
     return {
         "status": "ok",
         "message": "Adobe Analytics Documentation API is running",
         "endpoints": {
-            "ask": "/ask - POST endpoint to ask questions about Adobe Analytics"
+            "ask": "/ask (POST) - Ask a question about Adobe Analytics",
+            "health": "/health (GET) - Check API and indexer status"
         }
+    }
+
+@app.get("/health")
+async def health_check():
+    """Check if the API and index are working properly"""
+    global indexer
+    return {
+        "status": "healthy",
+        "index_loaded": indexer is not None and hasattr(indexer, 'vectorstore'),
+        "qa_chain_ready": indexer is not None and hasattr(indexer, 'qa_chain')
     }
 
 @app.post("/ask", response_model=QuestionResponse)
 async def ask_question(request: QuestionRequest):
-    if not indexer:
-        raise HTTPException(
-            status_code=503,
-            detail="Documentation indexer is not initialized. Please try again later."
-        )
-    
+    """
+    Ask a question about the Adobe Analytics documentation
+    """
     try:
+        # Ensure indexer is initialized
+        indexer = initialize_indexer()
+        
+        # Get answer using the indexer
         result = indexer.ask_question(request.question)
+        
         return QuestionResponse(
             answer=result["answer"],
             sources=result["sources"]
         )
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as they are already formatted
     except Exception as e:
+        error_detail = f"Error processing question: {str(e)}\nTraceback: {traceback.format_exc()}"
+        print(error_detail)  # Log the error on the server side
         raise HTTPException(
             status_code=500,
-            detail=f"Error processing question: {str(e)}"
+            detail=error_detail
         )
 
+def main():
+    """Run the API server"""
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8001) 
+    main() 

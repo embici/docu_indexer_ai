@@ -9,6 +9,7 @@ openai:
 document:
   chunk_size: 1000
   chunk_overlap: 100
+  max_depth: 1  # Maximum recursion depth for crawling pages
 
 # Vector Store Settings
 vector_store:
@@ -17,25 +18,47 @@ vector_store:
 
 # URLs to index
 urls:
-  - "https://experienceleague.adobe.com/docs/analytics/analyze/home.html"
+  - "https://experienceleague.adobe.com/en/docs/analytics/analyze/home"
+  - "https://experienceleague.adobe.com/en/docs/analytics/analyze/admin-overview/analytics-overview"
+  - "https://experienceleague.adobe.com/en/docs/analytics/admin/home"
+  - "https://experienceleague.adobe.com/en/docs/analytics/implementation/home"
+  - "https://experienceleague.adobe.com/en/docs/analytics/components/home"
+  - "https://experienceleague.adobe.com/en/docs/analytics/export/home"
+  - "https://experienceleague.adobe.com/en/docs/analytics/import/home"
+  - "https://experienceleague.adobe.com/en/docs/analytics/integration/home"
+  - "https://experienceleague.adobe.com/en/docs/analytics/technotes/home"
+  - "https://experienceleague.adobe.com/en/docs/media-analytics/using/media-overview"
+  - "https://experienceleague.adobe.com/en/docs/analytics-platform/using/cja-landing"
 
 # URL Pattern Restrictions
 url_patterns:
   accepted:
-    - "*/docs/analytics/*"
-    - "*/docs/data-collection/*"
+    - "*/en/docs/analytics/*"
+    - "*/en/docs/media-analytics/*"
+    - "*/en/docs/analytics-platform/*"
   blacklisted:
-    - "*/implementation/*"
-    - "*/admin/*"
     - "*/deprecated/*"
     - "*/legacy/*"
     - "*/login/*"
     - "*/signup/*"
+    - "*/beta/*"
+    - "*/preview/*"
 
 # Prompt Template
 prompt_template: |
-  Use the following pieces of context to answer the question at the end. 
-  If you don't know the answer, just say that you don't know, don't try to make up an answer.
+  You are a helpful AI assistant specializing in Adobe Analytics documentation. Use the following pieces of context to provide a detailed and well-structured answer to the question.
+
+  Guidelines for your response:
+  1. Start with a clear and concise main answer
+  2. Provide relevant details, examples, and explanations
+  3. Include any important caveats or considerations
+  4. Structure your response with proper formatting (headings, lists, etc.)
+  5. If you don't know the answer, say so clearly and explain why
+  6. End your response with a relevant follow-up question that:
+     - Builds upon the information just provided
+     - Helps the user explore related topics
+     - Is specific to Adobe Analytics
+     - Encourages deeper understanding of the subject
 
   Context: {context}
 

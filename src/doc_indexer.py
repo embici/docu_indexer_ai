@@ -10,10 +10,11 @@ from langchain_community.vectorstores import FAISS
 from langchain_openai import ChatOpenAI
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 import requests
 from urllib.parse import urljoin, urlparse
 from langchain.docstore.document import Document
+import time
 
 # Load environment variables
 load_dotenv()
@@ -34,6 +35,8 @@ class DocumentationIndexer:
             'blacklisted': []
         })
         self.processed_urls = set()
+        self.max_depth = self.config.get('document', {}).get('max_depth', 5)  # Get max_depth from config, default to 5
+        print(f"Initialized with max_depth: {self.max_depth} from config file: {config_path}")
         
         # Content extraction settings
         self.content_selectors = {
@@ -68,109 +71,158 @@ class DocumentationIndexer:
 
         return True
 
-    def _get_links_from_page(self, url: str) -> List[str]:
+    def _get_links_from_page(self, page) -> List[str]:
         """
         Extract all links from a page that match our patterns
         """
         try:
-            print(f"Fetching links from: {url}")
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
+            # Get all links from the page using JavaScript evaluation
+            links = page.evaluate('''() => {
+                const links = Array.from(document.querySelectorAll('a[href]'));
+                return links.map(link => link.href);
+            }''')
             
-            links = []
-            for a in soup.find_all('a', href=True):
-                href = a['href']
-                full_url = urljoin(url, href)
-                
-                # Only include URLs from the same domain and matching our patterns
-                if (urlparse(full_url).netloc == urlparse(url).netloc and 
-                    self._is_url_allowed(full_url) and
-                    full_url not in self.processed_urls):
-                    links.append(full_url)
+            # Filter links based on our patterns
+            valid_links = []
+            for link in links:
+                if (self._is_url_allowed(link) and
+                    link not in self.processed_urls):
+                    valid_links.append(link)
             
-            print(f"Found {len(links)} valid links on {url}")
-            return links
+            print(f"Found {len(valid_links)} valid links")
+            return valid_links
         except Exception as e:
-            print(f"Error extracting links from {url}: {e}")
+            print(f"Error extracting links: {e}")
             return []
 
-    def _extract_content(self, soup: BeautifulSoup) -> str:
+    def _extract_content(self, page) -> str:
         """
-        Extract the main content from the page using BeautifulSoup
+        Extract the main content from the page using Playwright
         """
-        # First try to find the main content area
-        main_content = None
-        for selector in self.content_selectors['main_content']:
-            main_content = soup.select_one(selector)
-            if main_content:
-                print(f"Found main content with selector: {selector}")
-                break
+        try:
+            # Wait for the main content to be available
+            main_content = None
+            for selector in self.content_selectors['main_content']:
+                try:
+                    main_content = page.wait_for_selector(selector, timeout=5000)
+                    if main_content:
+                        print(f"Found main content with selector: {selector}")
+                        break
+                except Exception as e:
+                    print(f"Failed to find content with selector {selector}: {e}")
+                    continue
 
-        # If no main content area found, use the body
-        if not main_content:
-            print("No main content area found, using body")
-            main_content = soup.body
+            # If no main content area found, use the body
+            if not main_content:
+                print("No main content area found, using body")
+                main_content = page.locator('body')
 
-        if not main_content:
-            print("No content found at all")
+            if not main_content:
+                print("No content found at all")
+                return ""
+
+            # Remove excluded elements
+            for selector in self.content_selectors['exclude']:
+                try:
+                    page.evaluate(f'''(selector) => {{
+                        const elements = document.querySelectorAll(selector);
+                        elements.forEach(el => el.remove());
+                    }}''', selector)
+                except Exception as e:
+                    print(f"Failed to remove excluded elements with selector {selector}: {e}")
+                    continue
+
+            # Get the element's selector and HTML
+            element_info = main_content.evaluate('''(el) => {
+                const tag = el.tagName.toLowerCase();
+                const id = el.id ? '#' + el.id : '';
+                const classes = el.className ? '.' + el.className.split(' ').join('.') : '';
+                return {
+                    selector: tag + id + classes,
+                    html: el.outerHTML
+                };
+            }''')
+
+            # Extract text while preserving structure using JavaScript evaluation
+            content = page.evaluate('''(elementInfo) => {
+                const mainContent = document.querySelector(elementInfo.selector);
+                if (!mainContent) return '';
+                
+                const content = [];
+                
+                // Process headings
+                const headings = mainContent.querySelectorAll('h1, h2, h3, h4, h5, h6');
+                headings.forEach(heading => {
+                    const level = parseInt(heading.tagName[1]);
+                    const text = heading.innerText.trim();
+                    if (text) {
+                        content.push(`${'#'.repeat(level)} ${text}\\n`);
+                    }
+                });
+
+                // Process paragraphs and lists
+                const elements = mainContent.querySelectorAll('p, li');
+                elements.forEach(element => {
+                    const text = element.innerText.trim();
+                    if (text) {
+                        if (element.tagName === 'LI') {
+                            content.push(`- ${text}\\n`);
+                        } else {
+                            content.push(`${text}\\n\\n`);
+                        }
+                    }
+                });
+
+                // Process code blocks
+                const codeBlocks = mainContent.querySelectorAll('pre, code');
+                codeBlocks.forEach(code => {
+                    if (code.tagName === 'PRE') {
+                        const text = code.innerText.trim();
+                        if (text) {
+                            content.push(`\\`\\`\\`\\n${text}\\n\\`\\`\\`\\n\\n`);
+                        }
+                    }
+                });
+
+                return content.join('');
+            }''', element_info)
+
+            extracted_content = content.strip()
+            print(f"Extracted {len(extracted_content)} characters of content")
+            return extracted_content
+        except Exception as e:
+            print(f"Error extracting content: {e}")
             return ""
 
-        # Remove excluded elements
-        for selector in self.content_selectors['exclude']:
-            for element in main_content.select(selector):
-                element.decompose()
-
-        # Extract text while preserving some structure
-        content = []
-        
-        # Process headings
-        for heading in main_content.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
-            level = int(heading.name[1])
-            content.append(f"{'#' * level} {heading.get_text().strip()}\n")
-
-        # Process paragraphs and lists
-        for element in main_content.find_all(['p', 'li']):
-            text = element.get_text().strip()
-            if text:
-                if element.name == 'li':
-                    content.append(f"- {text}\n")
-                else:
-                    content.append(f"{text}\n\n")
-
-        # Process code blocks
-        for code in main_content.find_all(['pre', 'code']):
-            if code.name == 'pre':
-                content.append(f"```\n{code.get_text().strip()}\n```\n\n")
-
-        extracted_content = "".join(content).strip()
-        print(f"Extracted {len(extracted_content)} characters of content")
-        return extracted_content
-
-    def _process_page(self, url: str, all_documents: List) -> None:
+    def _process_page(self, url: str, all_documents: List, page, depth: int = 0) -> None:
         """
         Process a single page and its linked pages recursively
         """
-        if url in self.processed_urls:
+        if url in self.processed_urls or depth >= self.max_depth:
             return
 
-        print(f"\nProcessing page: {url}")
+        print(f"\nProcessing page: {url} (depth: {depth})")
         self.processed_urls.add(url)
 
         try:
-            # Fetch and parse the page
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
+            # Navigate to the page
+            page.goto(url, wait_until='domcontentloaded', timeout=60000)
+            
+            # Wait for the main content to be available
+            try:
+                page.wait_for_load_state('networkidle', timeout=30000)
+            except Exception as e:
+                print(f"Warning: Page did not reach networkidle state: {e}")
+                # Continue anyway as we'll handle missing content gracefully
             
             # Extract content using our custom extractor
-            content = self._extract_content(soup)
+            content = self._extract_content(page)
             
             if content:
                 # Create a Document object with metadata
                 metadata = {
                     "source": url,
-                    "title": soup.title.string if soup.title else url
+                    "title": page.title() or url
                 }
                 document = Document(
                     page_content=content,
@@ -182,9 +234,13 @@ class DocumentationIndexer:
                 print(f"No content extracted from: {url}")
 
             # Get links from the current page and process them
-            links = self._get_links_from_page(url)
+            links = self._get_links_from_page(page)
             for link in links:
-                self._process_page(link, all_documents)
+                if link not in self.processed_urls:
+                    self._process_page(link, all_documents, page, depth + 1)
+
+            # Add a small delay to be nice to the server
+            time.sleep(1)
 
         except Exception as e:
             print(f"Error processing {url}: {e}")
@@ -199,11 +255,21 @@ class DocumentationIndexer:
 
         print(f"\nStarting indexing with URLs: {urls}")
         print(f"URL patterns: {self.url_patterns}")
+        print(f"Maximum recursion depth: {self.max_depth}")
 
-        # Process each starting URL and its linked pages
-        for url in urls:
-            if self._is_url_allowed(url):
-                self._process_page(url, all_documents)
+        # Initialize Playwright
+        with sync_playwright() as p:
+            # Launch browser
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+
+            try:
+                # Process each starting URL and its linked pages
+                for url in urls:
+                    if self._is_url_allowed(url):
+                        self._process_page(url, all_documents, page, depth=0)
+            finally:
+                browser.close()
 
         if not all_documents:
             raise ValueError("No documents were loaded from any of the provided URLs")
@@ -284,22 +350,12 @@ class DocumentationIndexer:
         }
 
 def main():
-    import sys
-    
-    # Example usage
+    # Initialize the indexer
     indexer = DocumentationIndexer()
     
-    # Load existing index
-    indexer.load_index()
-    
-    # Set up QA chain
-    indexer.setup_qa_chain()
-    
-    # Get question from command line argument
-    question = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "What is Adobe Analytics?"
-    print(f"\nQuestion: {question}")
-    answer = indexer.ask_question(question)
-    print(f"Answer: {answer}")
+    print("Indexing documents...")
+    indexer.index_documents()
+    print("Indexing completed!")
 
 if __name__ == "__main__":
     main() 
