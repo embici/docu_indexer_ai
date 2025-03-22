@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import uvicorn
 import traceback
 from doc_indexer import DocumentationIndexer
@@ -62,12 +62,19 @@ def initialize_indexer():
             )
     return indexer
 
+class Message(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+    sources: Optional[List[str]] = None
+
 class QuestionRequest(BaseModel):
     question: str
+    conversation_history: Optional[List[Message]] = []
 
 class QuestionResponse(BaseModel):
     answer: str
     sources: List[str]
+    conversation_history: List[Message]
 
 @app.on_event("startup")
 async def startup_event():
@@ -110,13 +117,29 @@ async def ask_question(request: QuestionRequest):
         # Ensure indexer is initialized
         indexer = initialize_indexer()
         
-        # Get answer using the indexer
-        result = indexer.ask_question(request.question)
+        # Format conversation history for context
+        conversation_context = ""
+        if request.conversation_history:
+            for msg in request.conversation_history:
+                conversation_context += f"{msg.role}: {msg.content}\n"
         
-        return QuestionResponse(
+        # Combine conversation history with current question
+        full_question = f"{conversation_context}User: {request.question}"
+        
+        # Get answer using the indexer
+        result = indexer.ask_question(full_question)
+        
+        # Create response with updated conversation history
+        response = QuestionResponse(
             answer=result["answer"],
-            sources=result["sources"]
+            sources=result["sources"],
+            conversation_history=request.conversation_history + [
+                Message(role="user", content=request.question),
+                Message(role="assistant", content=result["answer"], sources=result["sources"])
+            ]
         )
+        
+        return response
     except HTTPException:
         raise  # Re-raise HTTP exceptions as they are already formatted
     except Exception as e:
