@@ -18,20 +18,19 @@ vector_store:
 # URLs to index
 urls:
   - "https://experienceleague.adobe.com/docs/analytics/analyze/home.html"
-  - "https://experienceleague.adobe.com/docs/analytics/components/home.html"
-  - "https://experienceleague.adobe.com/docs/analytics/analyze/analysis-workspace/home.html"
 
 # URL Pattern Restrictions
 url_patterns:
   accepted:
-    - "*/docs/analytics/analyze/*"
-    - "*/docs/analytics/components/*"
-    - "*/docs/analytics/analyze/analysis-workspace/*"
+    - "*/docs/analytics/*"
+    - "*/docs/data-collection/*"
   blacklisted:
     - "*/implementation/*"
     - "*/admin/*"
     - "*/deprecated/*"
     - "*/legacy/*"
+    - "*/login/*"
+    - "*/signup/*"
 
 # Prompt Template
 prompt_template: |
