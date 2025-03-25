@@ -26,7 +26,7 @@ headers = {
 }
 
 class DocumentationIndexer:
-    def __init__(self, config_path: str = "src/config.yaml"):
+    def __init__(self, config_path: str = "config.yaml"):
         # Get the absolute path of the script's directory
         script_dir = Path(__file__).parent.absolute()
         
@@ -39,12 +39,16 @@ class DocumentationIndexer:
         self.embeddings = OpenAIEmbeddings()
         self.vectorstore = None
         self.qa_chain = None
+        self.llm = ChatOpenAI(
+            model_name=self.config['openai']['model_name'],
+            temperature=self.config['openai']['temperature']
+        )
         self.url_patterns = self.config.get('url_patterns', {
             'accepted': [],
             'blacklisted': []
         })
         self.processed_urls = set()
-        self.max_depth = self.config.get('document', {}).get('max_depth', 5)  # Get max_depth from config, default to 5
+        self.max_depth = self.config.get('document', {}).get('max_depth', 5)
         print(f"Initialized with max_depth: {self.max_depth} from config file: {config_path}")
         
         # Content extraction settings
@@ -322,12 +326,6 @@ class DocumentationIndexer:
         if not self.vectorstore:
             raise ValueError("No vector store available. Please index documents or load an existing index first.")
 
-        # Initialize the language model
-        llm = ChatOpenAI(
-            model_name=self.config['openai']['model_name'],
-            temperature=self.config['openai']['temperature']
-        )
-
         # Create a custom prompt template
         PROMPT = PromptTemplate(
             template=self.config['prompt_template'],
@@ -336,7 +334,7 @@ class DocumentationIndexer:
 
         # Create the chain
         self.qa_chain = RetrievalQA.from_chain_type(
-            llm=llm,
+            llm=self.llm,
             chain_type="stuff",
             retriever=self.vectorstore.as_retriever(
                 search_kwargs={"k": self.config['vector_store']['similarity_search_k']}
