@@ -15,6 +15,7 @@ import requests
 from urllib.parse import urljoin, urlparse
 from langchain.docstore.document import Document
 import time
+from pathlib import Path
 
 # Load environment variables
 load_dotenv()
@@ -26,6 +27,14 @@ headers = {
 
 class DocumentationIndexer:
     def __init__(self, config_path: str = "src/config.yaml"):
+        # Get the absolute path of the script's directory
+        script_dir = Path(__file__).parent.absolute()
+        
+        # If config_path is relative, make it absolute relative to script directory
+        if not os.path.isabs(config_path):
+            config_path = os.path.join(script_dir, config_path)
+        
+        print(f"Loading config from: {config_path}")
         self.config = self._load_config(config_path)
         self.embeddings = OpenAIEmbeddings()
         self.vectorstore = None
@@ -50,8 +59,15 @@ class DocumentationIndexer:
 
     def _load_config(self, config_path: str) -> dict:
         """Load configuration from YAML file"""
-        with open(config_path, 'r') as f:
-            return yaml.safe_load(f)
+        try:
+            with open(config_path, 'r') as f:
+                return yaml.safe_load(f)
+        except FileNotFoundError:
+            print(f"❌ Config file not found at: {config_path}")
+            raise
+        except Exception as e:
+            print(f"❌ Error loading config: {e}")
+            raise
 
     def _is_url_allowed(self, url: str) -> bool:
         """

@@ -7,9 +7,14 @@ import traceback
 from doc_indexer import DocumentationIndexer
 import sys
 from pathlib import Path
+import os
 
 # Add the src directory to the Python path to allow imports
 sys.path.append(str(Path(__file__).parent))
+
+# Get the absolute path of the script's directory
+script_dir = Path(__file__).parent.absolute()
+config_path = os.path.join(script_dir, "config.yaml")
 
 app = FastAPI(
     title="Adobe Analytics Documentation API",
@@ -40,8 +45,8 @@ def initialize_indexer():
     """Initialize the indexer and load the index"""
     global indexer
     if indexer is None:
-        indexer = DocumentationIndexer()
         try:
+            indexer = DocumentationIndexer(config_path=config_path)
             indexer.load_index()  # Try to load existing index
             indexer.setup_qa_chain()  # Set up the QA chain
             print("✅ Successfully loaded documentation index")
